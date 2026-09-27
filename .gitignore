@@ -1,0 +1,17 @@
+# Local operating-system and Python artifacts
+.DS_Store
+__pycache__/
+*.py[cod]
+.env
+.cds_profiles
+
+# Large source and generated datasets stay outside Git
+/code/data/raw/
+/code/data/processed/
+/code/data/patches/
+/code/data/metadata/grid/*.nc
+/code/data/metadata/grid/*.npz
+*.nc.part
+
+# Local research-paper library
+/research_pdf/

@@ -1,0 +1,685 @@
+{
+  "created_utc": "2026-09-27T11:10:36Z",
+  "years": [
+    2019,
+    2020
+  ],
+  "era5_months": [
+    {
+      "file": "era5_tp_2019_01.nc",
+      "status": "ok",
+      "size_bytes": 1663609,
+      "time_count": 744,
+      "time_start": "2019-01-01T00:00:00",
+      "time_end": "2019-01-31T23:00:00",
+      "time_step_seconds": 3600.0,
+      "variable": "tp",
+      "variable_dimensions": [
+        "valid_time",
+        "latitude",
+        "longitude"
+      ],
+      "variable_shape": [
+        744,
+        35,
+        57
+      ],
+      "units": "m",
+      "fill_value": NaN
+    },
+    {
+      "file": "era5_tp_2019_02.nc",
+      "status": "ok",
+      "size_bytes": 862604,
+      "time_count": 672,
+      "time_start": "2019-02-01T00:00:00",
+      "time_end": "2019-02-28T23:00:00",
+      "time_step_seconds": 3600.0,
+      "variable": "tp",
+      "variable_dimensions": [
+        "valid_time",
+        "latitude",
+        "longitude"
+      ],
+      "variable_shape": [
+        672,
+        35,
+        57
+      ],
+      "units": "m",
+      "fill_value": NaN
+    },
+    {
+      "file": "era5_tp_2019_03.nc",
+      "status": "ok",
+      "size_bytes": 1417589,
+      "time_count": 744,
+      "time_start": "2019-03-01T00:00:00",
+      "time_end": "2019-03-31T23:00:00",
+      "time_step_seconds": 3600.0,
+      "variable": "tp",
+      "variable_dimensions": [
+        "valid_time",
+        "latitude",
+        "longitude"
+      ],
+      "variable_shape": [
+        744,
+        35,
+        57
+      ],
+      "units": "m",
+      "fill_value": NaN
+    },
+    {
+      "file": "era5_tp_2019_04.nc",
+      "status": "ok",
+      "size_bytes": 981940,
+      "time_count": 720,
+      "time_start": "2019-04-01T00:00:00",
+      "time_end": "2019-04-30T23:00:00",
+      "time_step_seconds": 3600.0,
+      "variable": "tp",
+      "variable_dimensions": [
+        "valid_time",
+        "latitude",
+        "longitude"
+      ],
+      "variable_shape": [
+        720,
+        35,
+        57
+      ],
+      "units": "m",
+      "fill_value": NaN
+    },
+    {
+      "file": "era5_tp_2019_05.nc",
+      "status": "ok",
+      "size_bytes": 1385509,
+      "time_count": 744,
+      "time_start": "2019-05-01T00:00:00",
+      "time_end": "2019-05-31T23:00:00",
+      "time_step_seconds": 3600.0,
+      "variable": "tp",
+      "variable_dimensions": [
+        "valid_time",
+        "latitude",
+        "longitude"
+      ],
+      "variable_shape": [
+        744,
+        35,
+        57
+      ],
+      "units": "m",
+      "fill_value": NaN
+    },
+    {
+      "file": "era5_tp_2019_06.nc",
+      "status": "ok",
+      "size_bytes": 937585,
+      "time_count": 720,
+      "time_start": "2019-06-01T00:00:00",
+      "time_end": "2019-06-30T23:00:00",
+      "time_step_seconds": 3600.0,
+      "variable": "tp",
+      "variable_dimensions": [
+        "valid_time",
+        "latitude",
+        "longitude"
+      ],
+      "variable_shape": [
+        720,
+        35,
+        57
+      ],
+      "units": "m",
+      "fill_value": NaN
+    },
+    {
+      "file": "era5_tp_2019_07.nc",
+      "status": "ok",
+      "size_bytes": 1111872,
+      "time_count": 744,
+      "time_start": "2019-07-01T00:00:00",
+      "time_end": "2019-07-31T23:00:00",
+      "time_step_seconds": 3600.0,
+      "variable": "tp",
+      "variable_dimensions": [
+        "valid_time",
+        "latitude",
+        "longitude"
+      ],
+      "variable_shape": [
+        744,
+        35,
+        57
+      ],
+      "units": "m",
+      "fill_value": NaN
+    },
+    {
+      "file": "era5_tp_2019_08.nc",
+      "status": "ok",
+      "size_bytes": 1214661,
+      "time_count": 744,
+      "time_start": "2019-08-01T00:00:00",
+      "time_end": "2019-08-31T23:00:00",
+      "time_step_seconds": 3600.0,
+      "variable": "tp",
+      "variable_dimensions": [
+        "valid_time",
+        "latitude",
+        "longitude"
+      ],
+      "variable_shape": [
+        744,
+        35,
+        57
+      ],
+      "units": "m",
+      "fill_value": NaN
+    },
+    {
+      "file": "era5_tp_2019_09.nc",
+      "status": "ok",
+      "size_bytes": 1252425,
+      "time_count": 720,
+      "time_start": "2019-09-01T00:00:00",
+      "time_end": "2019-09-30T23:00:00",
+      "time_step_seconds": 3600.0,
+      "variable": "tp",
+      "variable_dimensions": [
+        "valid_time",
+        "latitude",
+        "longitude"
+      ],
+      "variable_shape": [
+        720,
+        35,
+        57
+      ],
+      "units": "m",
+      "fill_value": NaN
+    },
+    {
+      "file": "era5_tp_2019_10.nc",
+      "status": "ok",
+      "size_bytes": 1442695,
+      "time_count": 744,
+      "time_start": "2019-10-01T00:00:00",
+      "time_end": "2019-10-31T23:00:00",
+      "time_step_seconds": 3600.0,
+      "variable": "tp",
+      "variable_dimensions": [
+        "valid_time",
+        "latitude",
+        "longitude"
+      ],
+      "variable_shape": [
+        744,
+        35,
+        57
+      ],
+      "units": "m",
+      "fill_value": NaN
+    },
+    {
+      "file": "era5_tp_2019_11.nc",
+      "status": "ok",
+      "size_bytes": 1576514,
+      "time_count": 720,
+      "time_start": "2019-11-01T00:00:00",
+      "time_end": "2019-11-30T23:00:00",
+      "time_step_seconds": 3600.0,
+      "variable": "tp",
+      "variable_dimensions": [
+        "valid_time",
+        "latitude",
+        "longitude"
+      ],
+      "variable_shape": [
+        720,
+        35,
+        57
+      ],
+      "units": "m",
+      "fill_value": NaN
+    },
+    {
+      "file": "era5_tp_2019_12.nc",
+      "status": "ok",
+      "size_bytes": 1428300,
+      "time_count": 744,
+      "time_start": "2019-12-01T00:00:00",
+      "time_end": "2019-12-31T23:00:00",
+      "time_step_seconds": 3600.0,
+      "variable": "tp",
+      "variable_dimensions": [
+        "valid_time",
+        "latitude",
+        "longitude"
+      ],
+      "variable_shape": [
+        744,
+        35,
+        57
+      ],
+      "units": "m",
+      "fill_value": NaN
+    },
+    {
+      "file": "era5_tp_2020_01.nc",
+      "status": "ok",
+      "size_bytes": 1304964,
+      "time_count": 744,
+      "time_start": "2020-01-01T00:00:00",
+      "time_end": "2020-01-31T23:00:00",
+      "time_step_seconds": 3600.0,
+      "variable": "tp",
+      "variable_dimensions": [
+        "valid_time",
+        "latitude",
+        "longitude"
+      ],
+      "variable_shape": [
+        744,
+        35,
+        57
+      ],
+      "units": "m",
+      "fill_value": NaN
+    },
+    {
+      "file": "era5_tp_2020_02.nc",
+      "status": "ok",
+      "size_bytes": 1566927,
+      "time_count": 696,
+      "time_start": "2020-02-01T00:00:00",
+      "time_end": "2020-02-29T23:00:00",
+      "time_step_seconds": 3600.0,
+      "variable": "tp",
+      "variable_dimensions": [
+        "valid_time",
+        "latitude",
+        "longitude"
+      ],
+      "variable_shape": [
+        696,
+        35,
+        57
+      ],
+      "units": "m",
+      "fill_value": NaN
+    },
+    {
+      "file": "era5_tp_2020_03.nc",
+      "status": "ok",
+      "size_bytes": 1147200,
+      "time_count": 744,
+      "time_start": "2020-03-01T00:00:00",
+      "time_end": "2020-03-31T23:00:00",
+      "time_step_seconds": 3600.0,
+      "variable": "tp",
+      "variable_dimensions": [
+        "valid_time",
+        "latitude",
+        "longitude"
+      ],
+      "variable_shape": [
+        744,
+        35,
+        57
+      ],
+      "units": "m",
+      "fill_value": NaN
+    },
+    {
+      "file": "era5_tp_2020_04.nc",
+      "status": "ok",
+      "size_bytes": 590799,
+      "time_count": 720,
+      "time_start": "2020-04-01T00:00:00",
+      "time_end": "2020-04-30T23:00:00",
+      "time_step_seconds": 3600.0,
+      "variable": "tp",
+      "variable_dimensions": [
+        "valid_time",
+        "latitude",
+        "longitude"
+      ],
+      "variable_shape": [
+        720,
+        35,
+        57
+      ],
+      "units": "m",
+      "fill_value": NaN
+    },
+    {
+      "file": "era5_tp_2020_05.nc",
+      "status": "ok",
+      "size_bytes": 993444,
+      "time_count": 744,
+      "time_start": "2020-05-01T00:00:00",
+      "time_end": "2020-05-31T23:00:00",
+      "time_step_seconds": 3600.0,
+      "variable": "tp",
+      "variable_dimensions": [
+        "valid_time",
+        "latitude",
+        "longitude"
+      ],
+      "variable_shape": [
+        744,
+        35,
+        57
+      ],
+      "units": "m",
+      "fill_value": NaN
+    },
+    {
+      "file": "era5_tp_2020_06.nc",
+      "status": "ok",
+      "size_bytes": 1368867,
+      "time_count": 720,
+      "time_start": "2020-06-01T00:00:00",
+      "time_end": "2020-06-30T23:00:00",
+      "time_step_seconds": 3600.0,
+      "variable": "tp",
+      "variable_dimensions": [
+        "valid_time",
+        "latitude",
+        "longitude"
+      ],
+      "variable_shape": [
+        720,
+        35,
+        57
+      ],
+      "units": "m",
+      "fill_value": NaN
+    },
+    {
+      "file": "era5_tp_2020_07.nc",
+      "status": "ok",
+      "size_bytes": 1243968,
+      "time_count": 744,
+      "time_start": "2020-07-01T00:00:00",
+      "time_end": "2020-07-31T23:00:00",
+      "time_step_seconds": 3600.0,
+      "variable": "tp",
+      "variable_dimensions": [
+        "valid_time",
+        "latitude",
+        "longitude"
+      ],
+      "variable_shape": [
+        744,
+        35,
+        57
+      ],
+      "units": "m",
+      "fill_value": NaN
+    },
+    {
+      "file": "era5_tp_2020_08.nc",
+      "status": "ok",
+      "size_bytes": 1241198,
+      "time_count": 744,
+      "time_start": "2020-08-01T00:00:00",
+      "time_end": "2020-08-31T23:00:00",
+      "time_step_seconds": 3600.0,
+      "variable": "tp",
+      "variable_dimensions": [
+        "valid_time",
+        "latitude",
+        "longitude"
+      ],
+      "variable_shape": [
+        744,
+        35,
+        57
+      ],
+      "units": "m",
+      "fill_value": NaN
+    },
+    {
+      "file": "era5_tp_2020_09.nc",
+      "status": "ok",
+      "size_bytes": 1024211,
+      "time_count": 720,
+      "time_start": "2020-09-01T00:00:00",
+      "time_end": "2020-09-30T23:00:00",
+      "time_step_seconds": 3600.0,
+      "variable": "tp",
+      "variable_dimensions": [
+        "valid_time",
+        "latitude",
+        "longitude"
+      ],
+      "variable_shape": [
+        720,
+        35,
+        57
+      ],
+      "units": "m",
+      "fill_value": NaN
+    },
+    {
+      "file": "era5_tp_2020_10.nc",
+      "status": "ok",
+      "size_bytes": 1696888,
+      "time_count": 744,
+      "time_start": "2020-10-01T00:00:00",
+      "time_end": "2020-10-31T23:00:00",
+      "time_step_seconds": 3600.0,
+      "variable": "tp",
+      "variable_dimensions": [
+        "valid_time",
+        "latitude",
+        "longitude"
+      ],
+      "variable_shape": [
+        744,
+        35,
+        57
+      ],
+      "units": "m",
+      "fill_value": NaN
+    },
+    {
+      "file": "era5_tp_2020_11.nc",
+      "status": "ok",
+      "size_bytes": 1094591,
+      "time_count": 720,
+      "time_start": "2020-11-01T00:00:00",
+      "time_end": "2020-11-30T23:00:00",
+      "time_step_seconds": 3600.0,
+      "variable": "tp",
+      "variable_dimensions": [
+        "valid_time",
+        "latitude",
+        "longitude"
+      ],
+      "variable_shape": [
+        720,
+        35,
+        57
+      ],
+      "units": "m",
+      "fill_value": NaN
+    },
+    {
+      "file": "era5_tp_2020_12.nc",
+      "status": "ok",
+      "size_bytes": 1686301,
+      "time_count": 744,
+      "time_start": "2020-12-01T00:00:00",
+      "time_end": "2020-12-31T23:00:00",
+      "time_step_seconds": 3600.0,
+      "variable": "tp",
+      "variable_dimensions": [
+        "valid_time",
+        "latitude",
+        "longitude"
+      ],
+      "variable_shape": [
+        744,
+        35,
+        57
+      ],
+      "units": "m",
+      "fill_value": NaN
+    }
+  ],
+  "radklim_yw": {
+    "2019": {
+      "archive": "YW2017.002_2019_netcdf.tar.gz",
+      "archive_size_bytes": 12914707314,
+      "daily_files_found": 365,
+      "daily_files_expected": 365,
+      "first_day": "2019-01-01",
+      "last_day": "2019-12-31",
+      "daily_files_by_month": {
+        "01": 31,
+        "02": 28,
+        "03": 31,
+        "04": 30,
+        "05": 31,
+        "06": 30,
+        "07": 31,
+        "08": 31,
+        "09": 30,
+        "10": 31,
+        "11": 30,
+        "12": 31
+      },
+      "missing_days": [],
+      "unexpected_days": [],
+      "sample_daily_file": {
+        "member": "2019/01/YW_2017.002_20190101.nc",
+        "size_bytes": 45203448,
+        "time_count_per_day": 288,
+        "time_start": "2019-01-01T00:00:00",
+        "time_end": "2019-01-01T23:55:00",
+        "time_step_seconds": 300.0,
+        "variable": "RR",
+        "variable_dimensions": [
+          "time",
+          "y",
+          "x"
+        ],
+        "variable_shape": [
+          288,
+          1100,
+          900
+        ],
+        "units": "kg m-2",
+        "fill_value": 999.0,
+        "crs_attributes": {
+          "long_name": "RADOLAN Grid",
+          "grid_mapping_name": "polar_stereographic",
+          "latitude_of_projection_origin": 90.0,
+          "straight_vertical_longitude_from_pole": 10.0,
+          "semi_major_axis": 6370040.0,
+          "semi_minor_axis": 6370040.0,
+          "earth_radius": 6370040.0,
+          "standard_parallel": 60.0,
+          "false_easting": 0.0,
+          "false_northing": 0.0,
+          "inverse_flattening": 0.0,
+          "scale_factor_at_projection_origin": 0.9330127019,
+          "units": "m",
+          "proj4": "+proj=stere +lat_0=90 +lat_ts=90 +lon_0=10 +k_0=0.933012701892 +x_0=0 +y_0=0 +a=6370040 +b=6370040 +units=km +no_defs",
+          "crs_wkt": "PROJCRS[\"Stereographic_North_Pole\",BASEGEOGCRS[\"GCS_unnamed ellipse\",DATUM[\"D_unknown\",ELLIPSOID[\"Unknown\",6370040,0,LENGTHUNIT[\"metre\",1]]],PRIMEM[\"Greenwich\",0,ANGLEUNIT[\"Degree\",0.0174532925199433]]],CONVERSION[\"unnamed\",METHOD[\"Polar Stereographic (variant B)\"],PARAMETER[\"Latitude of standard parallel\",60,ANGLEUNIT[\"Degree\",0.0174532925199433]],PARAMETER[\"Longitude of origin\",10,ANGLEUNIT[\"Degree\",0.0174532925199433]],PARAMETER[\"False easting\",0,LENGTHUNIT[\"metre\",1000]],PARAMETER[\"False northing\",0,LENGTHUNIT[\"metre\",1000]]],CS[Cartesian,2],AXIS[\"x\",south,MERIDIAN[90,ANGLEUNIT[\"degree\",0.0174532925199433]],ORDER[1],LENGTHUNIT[\"metre\",1000]],AXIS[\"y\",south,MERIDIAN[180,ANGLEUNIT[\"degree\",0.0174532925199433]],ORDER[2],LENGTHUNIT[\"metre\",1000]]]",
+          "spatial_ref": "PROJCRS[\"Stereographic_North_Pole\",BASEGEOGCRS[\"GCS_unnamed ellipse\",DATUM[\"D_unknown\",ELLIPSOID[\"Unknown\",6370040,0,LENGTHUNIT[\"metre\",1]]],PRIMEM[\"Greenwich\",0,ANGLEUNIT[\"Degree\",0.0174532925199433]]],CONVERSION[\"unnamed\",METHOD[\"Polar Stereographic (variant B)\"],PARAMETER[\"Latitude of standard parallel\",60,ANGLEUNIT[\"Degree\",0.0174532925199433]],PARAMETER[\"Longitude of origin\",10,ANGLEUNIT[\"Degree\",0.0174532925199433]],PARAMETER[\"False easting\",0,LENGTHUNIT[\"metre\",1000]],PARAMETER[\"False northing\",0,LENGTHUNIT[\"metre\",1000]]],CS[Cartesian,2],AXIS[\"x\",south,MERIDIAN[90,ANGLEUNIT[\"degree\",0.0174532925199433]],ORDER[1],LENGTHUNIT[\"metre\",1000]],AXIS[\"y\",south,MERIDIAN[180,ANGLEUNIT[\"degree\",0.0174532925199433]],ORDER[2],LENGTHUNIT[\"metre\",1000]]]"
+        }
+      },
+      "status": "ok"
+    },
+    "2020": {
+      "archive": "YW2017.002_2020_netcdf.tar.gz",
+      "archive_size_bytes": 12378212216,
+      "daily_files_found": 366,
+      "daily_files_expected": 366,
+      "first_day": "2020-01-01",
+      "last_day": "2020-12-31",
+      "daily_files_by_month": {
+        "01": 31,
+        "02": 29,
+        "03": 31,
+        "04": 30,
+        "05": 31,
+        "06": 30,
+        "07": 31,
+        "08": 31,
+        "09": 30,
+        "10": 31,
+        "11": 30,
+        "12": 31
+      },
+      "missing_days": [],
+      "unexpected_days": [],
+      "sample_daily_file": {
+        "member": "2020/01/YW_2017.002_20200101.nc",
+        "size_bytes": 22746246,
+        "time_count_per_day": 288,
+        "time_start": "2020-01-01T00:00:00",
+        "time_end": "2020-01-01T23:55:00",
+        "time_step_seconds": 300.0,
+        "variable": "RR",
+        "variable_dimensions": [
+          "time",
+          "y",
+          "x"
+        ],
+        "variable_shape": [
+          288,
+          1100,
+          900
+        ],
+        "units": "kg m-2",
+        "fill_value": 999.0,
+        "crs_attributes": {
+          "long_name": "RADOLAN Grid",
+          "grid_mapping_name": "polar_stereographic",
+          "latitude_of_projection_origin": 90.0,
+          "straight_vertical_longitude_from_pole": 10.0,
+          "semi_major_axis": 6370040.0,
+          "semi_minor_axis": 6370040.0,
+          "earth_radius": 6370040.0,
+          "standard_parallel": 60.0,
+          "false_easting": 0.0,
+          "false_northing": 0.0,
+          "inverse_flattening": 0.0,
+          "scale_factor_at_projection_origin": 0.9330127019,
+          "units": "m",
+          "proj4": "+proj=stere +lat_0=90 +lat_ts=90 +lon_0=10 +k_0=0.933012701892 +x_0=0 +y_0=0 +a=6370040 +b=6370040 +units=km +no_defs",
+          "crs_wkt": "PROJCRS[\"Stereographic_North_Pole\",BASEGEOGCRS[\"GCS_unnamed ellipse\",DATUM[\"D_unknown\",ELLIPSOID[\"Unknown\",6370040,0,LENGTHUNIT[\"metre\",1]]],PRIMEM[\"Greenwich\",0,ANGLEUNIT[\"Degree\",0.0174532925199433]]],CONVERSION[\"unnamed\",METHOD[\"Polar Stereographic (variant B)\"],PARAMETER[\"Latitude of standard parallel\",60,ANGLEUNIT[\"Degree\",0.0174532925199433]],PARAMETER[\"Longitude of origin\",10,ANGLEUNIT[\"Degree\",0.0174532925199433]],PARAMETER[\"False easting\",0,LENGTHUNIT[\"metre\",1000]],PARAMETER[\"False northing\",0,LENGTHUNIT[\"metre\",1000]]],CS[Cartesian,2],AXIS[\"x\",south,MERIDIAN[90,ANGLEUNIT[\"degree\",0.0174532925199433]],ORDER[1],LENGTHUNIT[\"metre\",1000]],AXIS[\"y\",south,MERIDIAN[180,ANGLEUNIT[\"degree\",0.0174532925199433]],ORDER[2],LENGTHUNIT[\"metre\",1000]]]",
+          "spatial_ref": "PROJCRS[\"Stereographic_North_Pole\",BASEGEOGCRS[\"GCS_unnamed ellipse\",DATUM[\"D_unknown\",ELLIPSOID[\"Unknown\",6370040,0,LENGTHUNIT[\"metre\",1]]],PRIMEM[\"Greenwich\",0,ANGLEUNIT[\"Degree\",0.0174532925199433]]],CONVERSION[\"unnamed\",METHOD[\"Polar Stereographic (variant B)\"],PARAMETER[\"Latitude of standard parallel\",60,ANGLEUNIT[\"Degree\",0.0174532925199433]],PARAMETER[\"Longitude of origin\",10,ANGLEUNIT[\"Degree\",0.0174532925199433]],PARAMETER[\"False easting\",0,LENGTHUNIT[\"metre\",1000]],PARAMETER[\"False northing\",0,LENGTHUNIT[\"metre\",1000]]],CS[Cartesian,2],AXIS[\"x\",south,MERIDIAN[90,ANGLEUNIT[\"degree\",0.0174532925199433]],ORDER[1],LENGTHUNIT[\"metre\",1000]],AXIS[\"y\",south,MERIDIAN[180,ANGLEUNIT[\"degree\",0.0174532925199433]],ORDER[2],LENGTHUNIT[\"metre\",1000]]]"
+        }
+      },
+      "status": "ok"
+    }
+  },
+  "radklim_rw_archives_retained": [
+    {
+      "file": "RW2017.002_2019_netcdf.tar.gz",
+      "present": true
+    },
+    {
+      "file": "RW2017.002_2020_netcdf.tar.gz",
+      "present": true
+    }
+  ],
+  "yw_time_convention": "Each timestamp is the start of its five-minute measurement period (DWD format specification).",
+  "strict_hourly_window_match": true,
+  "hourly_aggregation": "Sum the 12 YW values whose timestamps lie in [ERA5 valid_time - 1 hour, ERA5 valid_time).",
+  "first_era5_timestamp_without_yw_context": "2019-01-01T00:00:00Z",
+  "first_hour_note": "This one ERA5 hour needs 2018-12-31 YW values, which are outside the downloaded 2019-2020 YW archives.",
+  "radklim_yw_doi": "10.5676/DWD/RADKLIM_YW_V2017.002",
+  "expected_era5_months": 24,
+  "found_era5_months": 24
+}

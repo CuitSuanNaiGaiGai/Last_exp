@@ -1,0 +1,129 @@
+{
+  "created_utc": "2026-09-27T13:34:00Z",
+  "area_bbox_south_north_west_east": [
+    46.5,
+    55.0,
+    2.0,
+    16.0
+  ],
+  "spatial_method": "bilinear ERA5 to cropped RADKLIM-YW grid",
+  "time_rule": "Sum exactly 12 YW five-minute start times in [ERA5 time - 3600 s, ERA5 time).",
+  "excluded_timestamps": [
+    "2019-01-01T00:00:00Z"
+  ],
+  "months": {
+    "2019_01": {
+      "status": "existing_skipped",
+      "time_count": 743
+    },
+    "2019_02": {
+      "status": "existing_skipped",
+      "time_count": 672
+    },
+    "2019_03": {
+      "status": "existing_skipped",
+      "time_count": 744
+    },
+    "2019_04": {
+      "status": "existing_skipped",
+      "time_count": 720
+    },
+    "2019_05": {
+      "status": "existing_skipped",
+      "time_count": 744
+    },
+    "2019_06": {
+      "status": "existing_skipped",
+      "time_count": 720
+    },
+    "2019_07": {
+      "status": "existing_skipped",
+      "time_count": 744
+    },
+    "2019_08": {
+      "status": "existing_skipped",
+      "time_count": 744
+    },
+    "2019_09": {
+      "status": "existing_skipped",
+      "time_count": 720
+    },
+    "2019_10": {
+      "status": "existing_skipped",
+      "time_count": 744
+    },
+    "2019_11": {
+      "status": "existing_skipped",
+      "time_count": 720
+    },
+    "2019_12": {
+      "status": "existing_skipped",
+      "time_count": 744
+    },
+    "2020_01": {
+      "status": "existing_skipped",
+      "time_count": 744
+    },
+    "2020_02": {
+      "status": "existing_skipped",
+      "time_count": 696
+    },
+    "2020_03": {
+      "status": "existing_skipped",
+      "time_count": 744
+    },
+    "2020_04": {
+      "status": "existing_skipped",
+      "time_count": 720
+    },
+    "2020_05": {
+      "status": "existing_skipped",
+      "time_count": 744
+    },
+    "2020_06": {
+      "status": "existing_skipped",
+      "time_count": 720
+    },
+    "2020_07": {
+      "status": "existing_skipped",
+      "time_count": 744
+    },
+    "2020_08": {
+      "status": "existing_skipped",
+      "time_count": 744
+    },
+    "2020_09": {
+      "status": "existing_skipped",
+      "time_count": 720
+    },
+    "2020_10": {
+      "status": "existing_skipped",
+      "time_count": 744
+    },
+    "2020_11": {
+      "status": "existing_skipped",
+      "time_count": 720
+    },
+    "2020_12": {
+      "status": "existing_skipped",
+      "time_count": 744
+    }
+  },
+  "grid_crop_shape": [
+    1021,
+    900
+  ],
+  "grid_valid_pixels": 876532,
+  "grid_crop_source_slices": {
+    "y": [
+      16,
+      1037
+    ],
+    "x": [
+      0,
+      900
+    ]
+  },
+  "total_aligned_hours": 17543,
+  "bilinear_map": "metadata/grid/era5_to_radklim_bilinear.npz"
+}
