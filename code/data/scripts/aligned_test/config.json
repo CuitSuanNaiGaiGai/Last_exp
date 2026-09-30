@@ -1,0 +1,23 @@
+{
+  "seed": 20260927,
+  "qc_sample_hours": 40,
+  "minimum_source_coverage": 0.8,
+  "split_days": {
+    "train": 512,
+    "val": 110,
+    "test": 109
+  },
+  "model": {
+    "patch_size": 128,
+    "batch_size": 2,
+    "inference_batch_size": 4,
+    "inference_core_size": 256,
+    "inference_halo": 112,
+    "epochs": 50,
+    "early_stopping_patience": 5,
+    "learning_rate": 0.001,
+    "base_channels": [16, 32, 64, 128],
+    "minimum_patch_support": 0.1,
+    "csi_threshold_mm_per_hour": 1.0
+  }
+}

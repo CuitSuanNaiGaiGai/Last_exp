@@ -1,0 +1,6 @@
+numpy>=2.0
+netCDF4>=1.7
+rasterio>=1.4
+matplotlib>=3.9
+torch>=2.7
+tqdm>=4.26,<5
