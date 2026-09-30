@@ -6,6 +6,7 @@ from __future__ import annotations
 import argparse
 import csv
 from datetime import datetime, timezone
+import hashlib
 import importlib.util
 import json
 import math
@@ -23,8 +24,12 @@ from common import (
     DatasetCache,
     OUTPUT_DIR,
     bilinear_to_radklim,
+    common_input_support,
     load_bilinear_map,
     read_field,
+    require_finite_on_support,
+    timestamp_list_sha256,
+    update_support_sha256,
 )
 
 
@@ -106,6 +111,27 @@ def read_year_records(year, split_filter):
                 split_filter, year, aligned_months, missing_synthetic_months
             )
         )
+
+    if split_filter != "all":
+        expected_timestamps = sorted(
+            timestamp
+            for timestamp in split_sets[split_filter]
+            if datetime.fromtimestamp(timestamp, timezone.utc).year == year
+        )
+        actual_timestamps = [record[0] for record in records]
+        if actual_timestamps != expected_timestamps:
+            missing = sorted(set(expected_timestamps) - set(actual_timestamps))
+            unexpected = sorted(set(actual_timestamps) - set(expected_timestamps))
+            raise RuntimeError(
+                "Refusing partial split evaluation for {}: expected {} timestamps, got {}; "
+                "missing={}, unexpected={}".format(
+                    split_filter,
+                    len(expected_timestamps),
+                    len(actual_timestamps),
+                    len(missing),
+                    len(unexpected),
+                )
+            )
 
     split_membership = {}
     for timestamp, _, _ in records:
@@ -529,17 +555,18 @@ def main():
     plot_candidates = []
     record_by_timestamp = {timestamp: record for record in records for timestamp in (record[0],)}
     observed_target_pixels = 0
-    common_support_pixels = 0
     common_support_hours = 0
+    common_support_pixel_hours = 0
     hours_by_split = {name: 0 for name in ("train", "val", "test", "unclassified")}
     common_hours_by_split = {name: 0 for name in ("train", "val", "test", "unclassified")}
+    support_digest = hashlib.sha256()
 
     support_descriptions = {
-        "RADKLIM truth": "finite RADKLIM target pixels inside ERA5/RADKLIM overlap",
-        "ERA5 raw": "finite RADKLIM target and finite ERA5 raw input inside overlap",
-        "Synthetic LR raw": "finite RADKLIM target and finite mapped synthetic input inside overlap",
-        "ERA5 prediction": "finite target, ERA5 input, and ERA5 model output inside overlap",
-        "Synthetic prediction": "finite target, synthetic input, and synthetic model output inside overlap",
+        "RADKLIM truth": "shared paired metric support: finite target, ERA5, and mapped Synthetic LR inside overlap",
+        "ERA5 raw": "shared paired metric support: finite target, ERA5, and mapped Synthetic LR inside overlap",
+        "Synthetic LR raw": "shared paired metric support: finite target, ERA5, and mapped Synthetic LR inside overlap",
+        "ERA5 prediction": "shared paired metric support; model output is required to be finite there",
+        "Synthetic prediction": "shared paired metric support; model output is required to be finite there",
     }
 
     progress = tqdm(
@@ -555,23 +582,29 @@ def main():
         target_valid = np.isfinite(target) & overlap
         observed_target_pixels += int(target_valid.sum())
         synthetic_raw, synthetic_valid = bilinear_to_radklim(coarse, mapping)
-
-        era_raw_mask = target_valid & np.isfinite(era)
-        synthetic_raw_mask = target_valid & synthetic_valid & np.isfinite(synthetic_raw)
-        raw_common_mask = era_raw_mask & synthetic_raw_mask
-        if era_raw_mask.any():
-            update_metrics(metric_accumulators["ERA5 raw"], era[era_raw_mask], target[era_raw_mask])
-            update_distribution(distribution_accumulators["ERA5 raw"], era[era_raw_mask], rng)
-        if synthetic_raw_mask.any():
+        raw_common_mask = common_input_support(
+            target,
+            era,
+            synthetic_valid & np.isfinite(synthetic_raw),
+            overlap,
+        )
+        require_finite_on_support("Synthetic LR raw", synthetic_raw, raw_common_mask)
+        update_support_sha256(support_digest, timestamp, raw_common_mask)
+        common_support_pixel_hours += int(raw_common_mask.sum())
+        if raw_common_mask.any():
+            update_metrics(metric_accumulators["ERA5 raw"], era[raw_common_mask], target[raw_common_mask])
             update_metrics(
                 metric_accumulators["Synthetic LR raw"],
-                synthetic_raw[synthetic_raw_mask],
-                target[synthetic_raw_mask],
+                synthetic_raw[raw_common_mask],
+                target[raw_common_mask],
             )
+            update_distribution(distribution_accumulators["ERA5 raw"], era[raw_common_mask], rng)
+            update_distribution(distribution_accumulators["Synthetic LR raw"], synthetic_raw[raw_common_mask], rng)
+            update_distribution(common_distribution_accumulators["RADKLIM truth"], target[raw_common_mask], rng)
+            update_distribution(common_distribution_accumulators["ERA5 raw"], era[raw_common_mask], rng)
             update_distribution(
-                distribution_accumulators["Synthetic LR raw"], synthetic_raw[synthetic_raw_mask], rng
+                common_distribution_accumulators["Synthetic LR raw"], synthetic_raw[raw_common_mask], rng
             )
-        if raw_common_mask.any():
             update_metrics(raw_common_metrics["ERA5 raw"], era[raw_common_mask], target[raw_common_mask])
             update_metrics(
                 raw_common_metrics["Synthetic LR raw"],
@@ -586,42 +619,62 @@ def main():
         era_prediction_mask = np.zeros(target.shape, dtype=bool)
         synthetic_prediction_mask = np.zeros(target.shape, dtype=bool)
         if models:
-            if era_raw_mask.any():
+            if raw_common_mask.any():
                 era_prediction = TRAIN.infer_tiled(
                     models["era5"], "era5", era, coarse, mapping, device
                 )
-                era_prediction_mask = era_raw_mask & np.isfinite(era_prediction)
-            if synthetic_raw_mask.any():
                 synthetic_prediction = TRAIN.infer_tiled(
                     models["synthetic"], "synthetic", era, coarse, mapping, device
                 )
-                synthetic_prediction_mask = synthetic_raw_mask & np.isfinite(synthetic_prediction)
-            if era_prediction_mask.any():
+                require_finite_on_support("ERA5 prediction", era_prediction, raw_common_mask)
+                require_finite_on_support("Synthetic prediction", synthetic_prediction, raw_common_mask)
+                era_prediction_mask = raw_common_mask.copy()
+                synthetic_prediction_mask = raw_common_mask.copy()
+            if raw_common_mask.any():
                 update_metrics(
                     metric_accumulators["ERA5 prediction"],
-                    era_prediction[era_prediction_mask],
-                    target[era_prediction_mask],
+                    era_prediction[raw_common_mask],
+                    target[raw_common_mask],
                 )
                 update_distribution(
                     distribution_accumulators["ERA5 prediction"],
-                    era_prediction[era_prediction_mask],
+                    era_prediction[raw_common_mask],
                     rng,
                 )
-            if synthetic_prediction_mask.any():
                 update_metrics(
                     metric_accumulators["Synthetic prediction"],
-                    synthetic_prediction[synthetic_prediction_mask],
-                    target[synthetic_prediction_mask],
+                    synthetic_prediction[raw_common_mask],
+                    target[raw_common_mask],
                 )
                 update_distribution(
                     distribution_accumulators["Synthetic prediction"],
-                    synthetic_prediction[synthetic_prediction_mask],
+                    synthetic_prediction[raw_common_mask],
                     rng,
+                )
+                update_distribution(
+                    common_distribution_accumulators["ERA5 prediction"],
+                    era_prediction[raw_common_mask],
+                    rng,
+                )
+                update_distribution(
+                    common_distribution_accumulators["Synthetic prediction"],
+                    synthetic_prediction[raw_common_mask],
+                    rng,
+                )
+                update_metrics(
+                    common_model_metrics["ERA5 prediction"],
+                    era_prediction[raw_common_mask],
+                    target[raw_common_mask],
+                )
+                update_metrics(
+                    common_model_metrics["Synthetic prediction"],
+                    synthetic_prediction[raw_common_mask],
+                    target[raw_common_mask],
                 )
 
         method_masks = {
-            "ERA5 raw": era_raw_mask,
-            "Synthetic LR raw": synthetic_raw_mask,
+            "ERA5 raw": raw_common_mask,
+            "Synthetic LR raw": raw_common_mask,
             "ERA5 prediction": era_prediction_mask,
             "Synthetic prediction": synthetic_prediction_mask,
         }
@@ -653,46 +706,25 @@ def main():
             ):
                 row[method + "_" + key] = metrics[key]
 
-        all_five_mask = (
-            target_valid
-            & np.isfinite(era)
-            & synthetic_valid
-            & np.isfinite(synthetic_raw)
-            & era_prediction_mask
-            & synthetic_prediction_mask
-        )
+        shared_mask = raw_common_mask
         split_name = split_membership.get(timestamp, "unclassified")
-        if all_five_mask.any() and models:
+        if shared_mask.any():
             common_support_hours += 1
-            common_support_pixels += int(all_five_mask.sum())
             hours_by_split[split_name] += 1
             common_hours_by_split[split_name] += 1
-            shared_fields = {
-                "RADKLIM truth": target,
-                "ERA5 raw": era,
-                "Synthetic LR raw": synthetic_raw,
-                "ERA5 prediction": era_prediction,
-                "Synthetic prediction": synthetic_prediction,
-            }
-            for name, values in shared_fields.items():
-                update_distribution(common_distribution_accumulators[name], values[all_five_mask], rng)
-            for name, prediction in (
-                ("ERA5 prediction", era_prediction),
-                ("Synthetic prediction", synthetic_prediction),
-            ):
-                update_metrics(common_model_metrics[name], prediction[all_five_mask], target[all_five_mask])
-            truth_values = target[all_five_mask]
-            plot_candidates.append({
-                "timestamp": int(timestamp),
-                "common_pixels": int(all_five_mask.sum()),
-                "target_max_mm_h": float(truth_values.max()),
-                "wet_fraction": float(np.count_nonzero(truth_values > 0.1)) / int(truth_values.size),
-            })
+            truth_values = target[shared_mask]
+            if models:
+                plot_candidates.append({
+                    "timestamp": int(timestamp),
+                    "common_pixels": int(shared_mask.sum()),
+                    "target_max_mm_h": float(truth_values.max()),
+                    "wet_fraction": float(np.count_nonzero(truth_values > 0.1)) / int(truth_values.size),
+                })
         per_hour_rows.append(row)
         progress.set_postfix(
-            era_pixels=int(era_raw_mask.sum()),
-            synthetic_pixels=int(synthetic_raw_mask.sum()),
-            shared_pixels=int(all_five_mask.sum()),
+            era_pixels=int(raw_common_mask.sum()),
+            synthetic_pixels=int(raw_common_mask.sum()),
+            shared_pixels=int(shared_mask.sum()),
             refresh=False,
         )
 
@@ -702,6 +734,18 @@ def main():
         name: finish_metrics(value) for name, value in raw_common_metrics.items()
     }
     model_common_metrics_result = {name: finish_metrics(value) for name, value in common_model_metrics.items()}
+    expected_shared_pixels = int(common_support_pixel_hours)
+    for name in ("ERA5 raw", "Synthetic LR raw"):
+        if metrics[name]["n_pixels"] != expected_shared_pixels:
+            raise RuntimeError("{} did not use the full shared common support".format(name))
+        if raw_common_metrics_result[name]["n_pixels"] != expected_shared_pixels:
+            raise RuntimeError("{} paired baseline denominator differs from shared support".format(name))
+    if models:
+        for name in ("ERA5 prediction", "Synthetic prediction"):
+            if metrics[name]["n_pixels"] != expected_shared_pixels:
+                raise RuntimeError("{} did not use the full shared common support".format(name))
+            if model_common_metrics_result[name]["n_pixels"] != expected_shared_pixels:
+                raise RuntimeError("{} paired model denominator differs from shared support".format(name))
     distributions = {name: finish_distribution(value) for name, value in distribution_accumulators.items()}
     common_distributions = {
         name: finish_distribution(value) for name, value in common_distribution_accumulators.items()
@@ -739,18 +783,23 @@ def main():
         "year": int(args.year),
         "split_filter": args.split,
         "hours_in_time_axis": int(len(records)),
+        "timestamp_list_sha256": timestamp_list_sha256([record[0] for record in records]),
+        "common_support_sha256": support_digest.hexdigest(),
+        "common_support_pixel_hours": int(common_support_pixel_hours),
+        "common_support_hours_with_valid_pixels": int(common_support_hours),
         "observed_RADKLIM_pixels_in_overlap_total": int(observed_target_pixels),
         "metric_supports": {
             "ERA5 raw": support_descriptions["ERA5 raw"],
             "Synthetic LR raw": support_descriptions["Synthetic LR raw"],
             "ERA5 prediction": support_descriptions["ERA5 prediction"],
             "Synthetic prediction": support_descriptions["Synthetic prediction"],
-            "all_five_common": "same pixels with finite target, both raw inputs, and both model predictions",
+            "shared_common": "same pixels with finite RADKLIM, ERA5 raw, and mapped Synthetic LR inside overlap; predictions must be finite on it",
         },
         "raw_input_vs_RADKLIM": {
             "ERA5 raw": metrics["ERA5 raw"],
             "Synthetic LR raw": metrics["Synthetic LR raw"],
-            "comparison_uses_pairwise_support": True,
+            "comparison_uses_pairwise_support": False,
+            "comparison_uses_three_field_common_support": True,
             "both_inputs_same_common_support": raw_common_metrics_result,
             "mae_winner": (
                 "ERA5 raw"
@@ -772,7 +821,7 @@ def main():
             "both_models_same_common_support": model_common_metrics_result,
         },
         "distributions": distributions,
-        "distributions_on_same_all_five_support": common_distributions,
+        "distributions_on_same_shared_support": common_distributions,
         "ERA5_prediction_collapse_check": {
             "valid_hours": era_prediction_stats["valid_hours"],
             "n_pixels": era_prediction_stats["n_pixels"],
@@ -808,7 +857,7 @@ def main():
             "bias": "estimate minus RADKLIM truth; positive means overestimation",
             "CSI": "hits / (hits + false alarms + misses), with both estimate and truth >= threshold",
             "wet_fraction": "fraction of valid pixels with precipitation > 0 mm/h",
-            "distribution_support": "each field uses its own valid target/input/output pixels within the geographic overlap; a second table reports all five fields on one shared support",
+            "distribution_support": "RADKLIM truth's standalone distribution uses all observed overlap pixels; raw inputs and model predictions use the shared three-field support, also repeated in the shared-support table",
             "units": "hourly accumulation in mm, numerically equivalent to mm/h for these hourly samples",
         },
         "warnings": [],
@@ -843,7 +892,7 @@ def main():
     write_distribution_csv(
         output_dir / "distributions_common_support.csv",
         common_distributions,
-        {name: "identical all-five-field common pixels" for name in FIELDS},
+        {name: "identical three-field input common pixels; prediction fields use that same support when models are loaded" for name in FIELDS},
     )
 
     with (output_dir / "per_hour_metrics.csv").open("w", newline="") as stream:

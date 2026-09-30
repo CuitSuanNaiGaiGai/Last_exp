@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 import csv
 from datetime import datetime, timezone
+import hashlib
 import json
 import math
 import os
@@ -18,7 +19,9 @@ from tqdm import tqdm
 
 from common import (
     ALIGNED_DIR, CONFIG, DatasetCache, OUTPUT_DIR, bilinear_to_radklim,
-    bilinear_valid_mask, load_bilinear_map, log_precipitation, read_field,
+    bilinear_valid_mask, common_input_support, load_bilinear_map,
+    log_precipitation, read_field, require_finite_on_support,
+    timestamp_list_sha256, update_support_sha256,
 )
 from model import SmallUNet
 
@@ -67,9 +70,10 @@ class Fields:
         synthetic_path = OUTPUT_DIR / "synthetic_lr" / path.name.replace("aligned_", "synthetic_lr_")
         synthetic_ds = self.synthetic_cache.get(synthetic_path)
         coarse = read_field(synthetic_ds.variables["precipitation"], index)
+        target[~self.overlap] = np.nan
         era[~self.overlap] = np.nan
         synthetic_available = bilinear_valid_mask(coarse, self.mapping)
-        support = np.isfinite(target) & np.isfinite(era) & synthetic_available & self.overlap
+        support = common_input_support(target, era, synthetic_available, self.overlap)
         return target, era, coarse, support
 
     def close(self):
@@ -517,6 +521,7 @@ def evaluate(mode: str, test_times, mapping, device, artifact_root=OUTPUT_DIR):
     fields = Fields(mapping)
     totals = {"abs_error": 0.0, "squared_error": 0.0, "error": 0.0, "pixels": 0, "target_pixels": 0, "hits": 0, "false_alarms": 0, "misses": 0}
     rows = []
+    support_digest = hashlib.sha256()
     threshold = float(CONFIG["model"]["csi_threshold_mm_per_hour"])
     started = time.time()
     test_progress = tqdm(
@@ -529,7 +534,9 @@ def evaluate(mode: str, test_times, mapping, device, artifact_root=OUTPUT_DIR):
     for position, timestamp in test_progress:
         target, era, coarse, common = fields.get(timestamp)
         pred = infer_tiled(model, mode, era, coarse, mapping, device)
-        valid = common & np.isfinite(target) & np.isfinite(pred)
+        require_finite_on_support("{} prediction".format(mode), pred, common)
+        valid = common
+        update_support_sha256(support_digest, timestamp, common)
         target_valid = np.isfinite(target) & fields.overlap
         truth = target[valid].astype(np.float64)
         estimate = pred[valid].astype(np.float64)
@@ -554,6 +561,10 @@ def evaluate(mode: str, test_times, mapping, device, artifact_root=OUTPUT_DIR):
     n = totals["pixels"]
     denom = totals["hits"] + totals["false_alarms"] + totals["misses"]
     summary = {"mode": mode, "timestamps": len(test_times), "valid_pixels": n,
+               "timestamp_list_sha256": timestamp_list_sha256(test_times),
+               "common_support_pixel_hours": n,
+               "common_support_sha256": support_digest.hexdigest(),
+               "common_support_definition": "finite RADKLIM target, finite aligned ERA5, valid mapped Synthetic LR availability, and inside overlap; model predictions must be finite on this support",
                "target_observed_pixels_within_overlap": totals["target_pixels"],
                "common_support_fraction_of_observed_target": n / totals["target_pixels"] if totals["target_pixels"] else None,
                "mae_mm": totals["abs_error"] / n if n else None,
@@ -597,6 +608,7 @@ def main():
         "paired_protocol": {"seed": BASE_SEED, "train_hours": len(train_times), "validation_hours": len(val_times),
                             "test_hours": len(test_times), "patch_size": PATCH, "batch_size": CONFIG["model"]["batch_size"],
                             "max_epochs": epochs,
+                            "timestamp_list_sha256": timestamp_list_sha256(test_times),
                             "early_stopping_patience": CONFIG["model"].get("early_stopping_patience", 5),
                             "smoke_test": bool(args.smoke_test),
                             "inference_core_size": CONFIG["model"].get("inference_core_size", 256),
@@ -620,8 +632,13 @@ def main():
             if synthetic.variables["precipitation"].shape[1:] != (35, 57):
                 raise ValueError(f"Unexpected synthetic ERA5 grid shape in {synthetic_path.name}")
             synthetic_hours += len(synthetic.dimensions["time"])
-    if len(summaries) == 2 and summaries["era5"]["valid_pixels"] != summaries["synthetic"]["valid_pixels"]:
-        raise ValueError("Paired test methods were not evaluated on the same number of pixels")
+    if len(summaries) == 2:
+        if summaries["era5"]["valid_pixels"] != summaries["synthetic"]["valid_pixels"]:
+            raise ValueError("Paired test methods were not evaluated on the same number of pixels")
+        if summaries["era5"]["timestamp_list_sha256"] != summaries["synthetic"]["timestamp_list_sha256"]:
+            raise ValueError("Paired test methods used different timestamp lists")
+        if summaries["era5"]["common_support_sha256"] != summaries["synthetic"]["common_support_sha256"]:
+            raise ValueError("Paired test methods used different common validity masks")
     split_summary = json.loads((OUTPUT_DIR / "splits" / "split_summary.json").read_text())
     run_summary = {
         "status": "smoke_test_passed" if args.smoke_test else "complete",

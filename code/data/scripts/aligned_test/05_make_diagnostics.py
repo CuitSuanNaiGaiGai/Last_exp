@@ -2,6 +2,7 @@
 
 from collections import defaultdict
 from datetime import datetime, timezone
+import hashlib
 import importlib.util
 import json
 import os
@@ -19,7 +20,17 @@ import numpy as np
 import torch
 from netCDF4 import Dataset
 
-from common import ALIGNED_DIR, CONFIG, OUTPUT_DIR, bilinear_to_radklim, load_bilinear_map
+from common import (
+    ALIGNED_DIR,
+    CONFIG,
+    OUTPUT_DIR,
+    bilinear_to_radklim,
+    common_input_support,
+    load_bilinear_map,
+    require_finite_on_support,
+    timestamp_list_sha256,
+    update_support_sha256,
+)
 from model import SmallUNet
 
 
@@ -125,18 +136,27 @@ def main():
     candidates = {label: [] for label, _ in STRATA}
     total_common = 0
     total_target_observed = 0
+    support_digest = hashlib.sha256()
     sample_per_hour = 256
 
     print(f"Diagnostics device={device}; test hours={len(test_times)}", flush=True)
     for position, timestamp in enumerate(test_times):
         target, era, coarse, common = fields.get(timestamp)
         synthetic, synthetic_valid = bilinear_to_radklim(coarse, mapping)
-        common &= synthetic_valid
-        common &= np.isfinite(target) & np.isfinite(era) & np.isfinite(synthetic)
+        common = common_input_support(
+            target,
+            era,
+            synthetic_valid & np.isfinite(synthetic),
+            fields.overlap,
+        )
+        require_finite_on_support("Synthetic LR raw", synthetic, common)
+        update_support_sha256(support_digest, timestamp, common)
         if not common.any():
             continue
         era_prediction = TRAIN.infer_tiled(models["era5"][0], "era5", era, coarse, mapping, device)
         synthetic_prediction = TRAIN.infer_tiled(models["synthetic"][0], "synthetic", era, coarse, mapping, device)
+        require_finite_on_support("ERA5 prediction", era_prediction, common)
+        require_finite_on_support("Synthetic prediction", synthetic_prediction, common)
         truth = target[common]
         values = {
             "ERA5 raw": era[common],
@@ -202,6 +222,9 @@ def main():
     summary = {
         "test_period_utc": [datetime.fromtimestamp(test_times[0], timezone.utc).isoformat(), datetime.fromtimestamp(test_times[-1], timezone.utc).isoformat()],
         "test_hours": len(test_times),
+        "timestamp_list_sha256": timestamp_list_sha256(test_times),
+        "common_support_sha256": support_digest.hexdigest(),
+        "common_support_pixel_hours": total_common,
         "common_valid_pixels": total_common,
         "observed_target_pixels_in_overlap": total_target_observed,
         "common_support_fraction_of_observed_target": total_common / total_target_observed if total_target_observed else None,

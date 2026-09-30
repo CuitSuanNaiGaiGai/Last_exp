@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from collections import OrderedDict
 from datetime import datetime, timezone
+import hashlib
 import json
 from pathlib import Path
 
@@ -94,6 +95,8 @@ def bilinear_to_radklim(coarse: np.ndarray, mapping: dict[str, np.ndarray], regi
     valid = mapping["overlap_mask"][y_slice, x_slice].astype(bool, copy=True)
     for corner in corners:
         valid &= np.isfinite(corner)
+    for weight in weights:
+        valid &= np.isfinite(weight)
     result = np.zeros(valid.shape, dtype=np.float32)
     for corner, weight in zip(corners, weights):
         result += np.where(valid, corner, 0).astype(np.float32) * weight.astype(np.float32)
@@ -108,6 +111,8 @@ def bilinear_valid_mask(coarse: np.ndarray, mapping: dict[str, np.ndarray]) -> n
     valid = mapping["overlap_mask"].astype(bool, copy=True)
     for corner in (coarse[i, j], coarse[i, j + 1], coarse[i + 1, j], coarse[i + 1, j + 1]):
         valid &= np.isfinite(corner)
+    for name in ("weight_00", "weight_01", "weight_10", "weight_11"):
+        valid &= np.isfinite(mapping[name])
     return valid
 
 
@@ -119,6 +124,67 @@ def common_support(target: np.ndarray, *inputs: np.ndarray) -> np.ndarray:
     for field in inputs:
         valid &= np.isfinite(field)
     return valid
+
+
+def common_input_support(
+    target: np.ndarray,
+    era: np.ndarray,
+    synthetic_available: np.ndarray,
+    overlap: np.ndarray,
+) -> np.ndarray:
+    """Return the shared raw-input support used by every paired metric.
+
+    ``synthetic_available`` is the RADKLIM-grid mask from the saved strict
+    four-corner bilinear map. The mapped synthetic field must be finite on
+    these cells wherever it is materialized by the caller.
+    """
+    arrays = (era, synthetic_available, overlap)
+    if any(np.shape(array) != np.shape(target) for array in arrays):
+        raise ValueError("Target, ERA5, synthetic availability, and overlap must share one grid")
+    return (
+        np.asarray(overlap, dtype=bool)
+        & np.isfinite(target)
+        & np.isfinite(era)
+        & np.asarray(synthetic_available, dtype=bool)
+    )
+
+
+def circular_neighborhood_kernel(radius_cells: int) -> np.ndarray:
+    """Return a binary Euclidean disk on a square native-grid neighborhood."""
+    radius_cells = int(radius_cells)
+    if radius_cells < 0:
+        raise ValueError("Neighborhood radius must be nonnegative")
+    offsets = np.arange(-radius_cells, radius_cells + 1, dtype=np.int32)
+    yy, xx = np.meshgrid(offsets, offsets, indexing="ij")
+    return (xx * xx + yy * yy <= radius_cells * radius_cells).astype(np.float32)
+
+
+def require_finite_on_support(name: str, field: np.ndarray, support: np.ndarray) -> None:
+    """Fail loudly instead of silently changing a paired metric denominator."""
+    if np.shape(field) != np.shape(support):
+        raise ValueError("{} and common support must share one grid".format(name))
+    missing = np.asarray(support, dtype=bool) & ~np.isfinite(field)
+    count = int(np.count_nonzero(missing))
+    if count:
+        raise ValueError(
+            "{} has {} non-finite values on common support; refusing to shrink metric denominator".format(
+                name, count
+            )
+        )
+
+
+def timestamp_list_sha256(timestamps) -> str:
+    """Stable fingerprint of an ordered Unix-second timestamp list."""
+    values = np.asarray([int(value) for value in timestamps], dtype="<i8")
+    return hashlib.sha256(values.tobytes()).hexdigest()
+
+
+def update_support_sha256(digest, timestamp: int, support: np.ndarray) -> None:
+    """Add one timestamp and its packed row-major mask to a running digest."""
+    mask = np.asarray(support, dtype=bool)
+    digest.update(np.asarray([int(timestamp)], dtype="<i8").tobytes())
+    digest.update(np.asarray(mask.shape, dtype="<i8").tobytes())
+    digest.update(np.packbits(mask.reshape(-1)).tobytes())
 
 
 def log_precipitation(values: np.ndarray) -> np.ndarray:

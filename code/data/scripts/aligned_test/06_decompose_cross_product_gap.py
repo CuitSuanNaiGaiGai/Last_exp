@@ -15,6 +15,7 @@ from __future__ import annotations
 import argparse
 import csv
 from datetime import datetime, timezone
+import hashlib
 import importlib.util
 import json
 import math
@@ -24,6 +25,7 @@ import time
 
 import numpy as np
 import torch
+import torch.nn.functional as F
 from netCDF4 import Dataset
 from tqdm import tqdm
 
@@ -32,9 +34,15 @@ from common import (
     CONFIG,
     DatasetCache,
     OUTPUT_DIR,
+    bilinear_valid_mask,
     bilinear_to_radklim,
+    circular_neighborhood_kernel,
+    common_input_support,
     load_bilinear_map,
     read_field,
+    require_finite_on_support,
+    timestamp_list_sha256,
+    update_support_sha256,
 )
 
 
@@ -47,6 +55,7 @@ THRESHOLDS = (("0.1", 0.1), ("1", 1.0), ("5", 5.0))
 SCALES_KM = (1, 5, 10, 25)
 ESTIMATE_NAMES = (
     "ERA5 raw",
+    "ERA5 quantile mapped",
     "Synthetic LR raw",
     "ERA5 prediction",
     "Synthetic prediction",
@@ -162,8 +171,15 @@ def fit_empirical_quantile_map(train_times, reader, samples_per_hour, seed):
         unit="hour",
         dynamic_ncols=True,
     ):
-        target, era, _, _ = reader.get_base(timestamp)
-        support = reader.overlap & np.isfinite(target) & np.isfinite(era)
+        target, era, aligned_path, aligned_index = reader.get_base(timestamp)
+        coarse = reader.get_synthetic(timestamp, aligned_path, aligned_index)
+        synthetic_available = bilinear_valid_mask(coarse, reader.mapping)
+        support = common_input_support(
+            target,
+            era,
+            synthetic_available,
+            reader.overlap,
+        )
         flat_indices = np.flatnonzero(support)
         valid_pixel_hours += int(flat_indices.size)
         if not flat_indices.size:
@@ -194,6 +210,7 @@ def fit_empirical_quantile_map(train_times, reader, samples_per_hour, seed):
     fit = {
         "method": "global deterministic empirical marginal quantile mapping",
         "fit_split": "train",
+        "fit_support": "shared finite RADKLIM/ERA5/Synthetic-LR input support inside overlap",
         "fit_hours_available": int(len(train_times)),
         "fit_hours_sampled": int(sampled_hours),
         "common_train_pixel_hours": int(valid_pixel_hours),
@@ -379,37 +396,30 @@ def finish_neighborhood_metrics(accumulator):
     }
 
 
-def event_integral_stack(truth, estimates, support):
-    """Build integral images for support and threshold events for all methods."""
-    maps = [support.astype(np.int32)]
-    channel_names = [(None, None)]
-    for method in ESTIMATE_NAMES:
-        values = estimates[method]
-        for label, threshold in THRESHOLDS:
-            maps.append((support & np.isfinite(values) & (values >= threshold)).astype(np.int32))
-            channel_names.append((method, label))
+def circle_event_counts(target, estimates, support, radius_cells, device):
+    """Count common support and threshold events in exact circular neighborhoods."""
+    maps = [np.asarray(support, dtype=np.float32)]
+    channel_index = {("support", None): 0}
     for label, threshold in THRESHOLDS:
-        # Observations are stored after estimates so each forecast channel is easy to index.
-        maps.append((support & np.isfinite(truth) & (truth >= threshold)).astype(np.int32))
-        channel_names.append(("RADKLIM truth", label))
+        maps.append((support & (target >= threshold)).astype(np.float32))
+        channel_index[("RADKLIM truth", label)] = len(maps) - 1
+        for name in ESTIMATE_NAMES:
+            maps.append((support & (estimates[name] >= threshold)).astype(np.float32))
+            channel_index[(name, label)] = len(maps) - 1
 
-    event_maps = np.stack(maps, axis=0)
-    channels, height, width = event_maps.shape
-    integral = np.zeros((channels, height + 1, width + 1), dtype=np.int32)
-    integral[:, 1:, 1:] = np.cumsum(
-        np.cumsum(event_maps, axis=1, dtype=np.int32), axis=2, dtype=np.int32
-    )
-    channel_index = {key: index for index, key in enumerate(channel_names)}
-    return integral, channel_index
-
-
-def integral_window_sums(integral, window):
-    return (
-        integral[:, window:, window:]
-        - integral[:, :-window, window:]
-        - integral[:, window:, :-window]
-        + integral[:, :-window, :-window]
-    )
+    image = torch.from_numpy(np.stack(maps, axis=0)).unsqueeze(0).to(device)
+    kernel_array = circular_neighborhood_kernel(radius_cells)
+    channels = len(maps)
+    kernel = torch.from_numpy(kernel_array).to(device=device, dtype=torch.float32)
+    weights = kernel.view(1, 1, *kernel.shape).expand(channels, 1, -1, -1).contiguous()
+    with torch.no_grad():
+        counts = F.conv2d(
+            image,
+            weights,
+            padding=radius_cells,
+            groups=channels,
+        )[0].cpu().numpy()
+    return counts, channel_index, int(kernel_array.sum())
 
 
 def compute_intensity_masks(target):
@@ -446,6 +456,61 @@ def finish_error_accumulator(accumulator):
     }
 
 
+def new_quantile_distribution_accumulator():
+    return {
+        "n_pixel_hours": 0,
+        "sum": 0.0,
+        "squared_sum": 0.0,
+        "max_mm_h": None,
+        "wet_pixels": 0,
+        "sample_chunks": [],
+    }
+
+
+def update_quantile_distribution(accumulator, values, sampled_values):
+    values = np.asarray(values, dtype=np.float64).reshape(-1)
+    if not values.size:
+        return
+    if not np.isfinite(values).all():
+        raise ValueError("Quantile distribution received non-finite values on common support")
+    accumulator["n_pixel_hours"] += int(values.size)
+    accumulator["sum"] += float(values.sum())
+    accumulator["squared_sum"] += float(np.square(values).sum())
+    maximum = float(values.max())
+    if accumulator["max_mm_h"] is None or maximum > accumulator["max_mm_h"]:
+        accumulator["max_mm_h"] = maximum
+    accumulator["wet_pixels"] += int(np.count_nonzero(values > 0.0))
+    if len(sampled_values):
+        accumulator["sample_chunks"].append(np.asarray(sampled_values, dtype=np.float32))
+
+
+def finish_quantile_distribution(accumulator):
+    count = int(accumulator["n_pixel_hours"])
+    samples = (
+        np.concatenate(accumulator["sample_chunks"])
+        if accumulator["sample_chunks"]
+        else np.empty(0, dtype=np.float32)
+    )
+    quantiles = (
+        np.percentile(samples, [95.0, 99.0, 99.9]).astype(np.float64)
+        if samples.size
+        else (None, None, None)
+    )
+    mean = accumulator["sum"] / count if count else None
+    variance = max(accumulator["squared_sum"] / count - mean * mean, 0.0) if count else None
+    return {
+        "n_pixel_hours": count,
+        "mean_mm_h": mean,
+        "std_mm_h": math.sqrt(variance) if variance is not None else None,
+        "max_mm_h": accumulator["max_mm_h"],
+        "p95_mm_h_sampled": float(quantiles[0]) if quantiles[0] is not None else None,
+        "p99_mm_h_sampled": float(quantiles[1]) if quantiles[1] is not None else None,
+        "p99_9_mm_h_sampled": float(quantiles[2]) if quantiles[2] is not None else None,
+        "wet_fraction": accumulator["wet_pixels"] / count if count else None,
+        "quantile_sample_pixels": int(samples.size),
+    }
+
+
 def write_csv(path, rows, fieldnames):
     with path.open("w", newline="", encoding="utf-8") as stream:
         writer = csv.DictWriter(stream, fieldnames=fieldnames)
@@ -474,6 +539,12 @@ def main():
         help="Maximum common-support train pixels sampled per hour to fit the empirical quantile map.",
     )
     parser.add_argument(
+        "--qm-eval-samples-per-hour",
+        type=int,
+        default=2048,
+        help="Maximum common-support test pixels sampled per hour for ERA5/QM percentile estimates.",
+    )
+    parser.add_argument(
         "--min-support-fraction",
         type=float,
         default=0.5,
@@ -482,6 +553,8 @@ def main():
     args = parser.parse_args()
     if not (0.0 < args.min_support_fraction <= 1.0):
         parser.error("--min-support-fraction must be in (0, 1]")
+    if args.qm_eval_samples_per_hour < 1:
+        parser.error("--qm-eval-samples-per-hour must be positive")
 
     started = time.time()
     mapping = load_bilinear_map()
@@ -545,13 +618,17 @@ def main():
             for scale in SCALES_KM
         }
         neighborhood_accumulators = {
-            (window, name, label): new_neighborhood_accumulator()
-            for window in SCALES_KM
+            (radius, name, label): new_neighborhood_accumulator()
+            for radius in SCALES_KM
             for name in ESTIMATE_NAMES
             for label, _ in THRESHOLDS
         }
         quantile_accumulators = {
             name: new_point_accumulator()
+            for name in ("ERA5 raw", "ERA5 quantile mapped")
+        }
+        quantile_distribution_accumulators = {
+            name: new_quantile_distribution_accumulator()
             for name in ("ERA5 raw", "ERA5 quantile mapped")
         }
         intensity_accumulators = {
@@ -563,8 +640,9 @@ def main():
             "overlap_pixels": int(reader.overlap.sum()),
             "target_valid_pixel_hours": 0,
             "raw_three_way_pixel_hours": 0,
-            "five_field_common_pixel_hours": 0,
         }
+        support_digest = hashlib.sha256()
+        eval_sample_rng = np.random.RandomState(seed + 1)
 
         progress = tqdm(
             eval_times,
@@ -577,13 +655,13 @@ def main():
             target, era, aligned_path, index = reader.get_base(timestamp)
             coarse = reader.get_synthetic(timestamp, aligned_path, index)
             synthetic, synthetic_valid = bilinear_to_radklim(coarse, mapping)
-            raw_support = (
-                reader.overlap
-                & np.isfinite(target)
-                & np.isfinite(era)
-                & synthetic_valid
-                & np.isfinite(synthetic)
+            raw_support = common_input_support(
+                target,
+                era,
+                synthetic_valid & np.isfinite(synthetic),
+                reader.overlap,
             )
+            require_finite_on_support("Synthetic LR raw", synthetic, raw_support)
 
             era_prediction = TRAIN.infer_tiled(
                 models["era5"], "era5", era, coarse, mapping, device
@@ -591,23 +669,26 @@ def main():
             synthetic_prediction = TRAIN.infer_tiled(
                 models["synthetic"], "synthetic", era, coarse, mapping, device
             )
+            require_finite_on_support("ERA5 prediction", era_prediction, raw_support)
+            require_finite_on_support("Synthetic prediction", synthetic_prediction, raw_support)
+            calibrated_era = apply_quantile_map(era, lookup)
+            require_finite_on_support("ERA5 quantile mapped", calibrated_era, raw_support)
             estimates = {
                 "ERA5 raw": era,
+                "ERA5 quantile mapped": calibrated_era,
                 "Synthetic LR raw": synthetic,
                 "ERA5 prediction": era_prediction,
                 "Synthetic prediction": synthetic_prediction,
             }
-            common = raw_support.copy()
-            for values in estimates.values():
-                common &= np.isfinite(values)
+            common = raw_support
+            update_support_sha256(support_digest, timestamp, common)
             support_totals["target_valid_pixel_hours"] += int(
                 (reader.overlap & np.isfinite(target)).sum()
             )
             support_totals["raw_three_way_pixel_hours"] += int(raw_support.sum())
-            support_totals["five_field_common_pixel_hours"] += int(common.sum())
 
-            # 1. Multiscale point metrics: area-average the same five-way common
-            # support into nominal 1/5/10/25 km square cells.
+            # 1. Multiscale point metrics use the exact same three-input support
+            # as 04 and 05, area-averaged into nominal 1/5/10/25 km cells.
             for scale in SCALES_KM:
                 aggregated, valid_blocks, block_support_fraction = aggregate_common_blocks(
                     target, estimates, common, scale, args.min_support_fraction
@@ -625,14 +706,14 @@ def main():
                         truth_coarse[valid_blocks],
                     )
 
-            # 2. Spatial tolerance: fractions of event pixels in each moving
-            # square window, with identical valid support for all five fields.
-            integral, event_channels = event_integral_stack(target, estimates, common)
-            for window in SCALES_KM:
-                sums = integral_window_sums(integral, window)
-                support_count = sums[event_channels[(None, None)]]
-                valid_centers = support_count >= int(
-                    math.ceil(args.min_support_fraction * window * window)
+            # 2. Spatial tolerance: event fractions in Euclidean disk radii.
+            for radius in SCALES_KM:
+                sums, event_channels, disk_cells = circle_event_counts(
+                    target, estimates, common, radius, device
+                )
+                support_count = sums[event_channels[("support", None)]]
+                valid_centers = common & (
+                    support_count >= int(math.ceil(args.min_support_fraction * disk_cells))
                 )
                 denominator = np.maximum(support_count.astype(np.float32), 1.0)
                 for label, _ in THRESHOLDS:
@@ -646,27 +727,40 @@ def main():
                             / denominator
                         )
                         update_neighborhood_metrics(
-                            neighborhood_accumulators[(window, name, label)],
+                            neighborhood_accumulators[(radius, name, label)],
                             forecast_fraction,
                             observed_fraction,
                             valid_centers,
                         )
 
-            # 3. ERA5-only train-fitted marginal correction; raw and mapped
-            # ERA5 are scored against target on exactly the same pair support.
-            quantile_support = reader.overlap & np.isfinite(target) & np.isfinite(era)
-            calibrated_era = apply_quantile_map(era, lookup)
+            # 3. ERA5-only train-fitted marginal correction, scored on the exact
+            # shared raw-input mask also used for ERA5 and both model scores.
+            quantile_support = common
             update_point_metrics(
                 quantile_accumulators["ERA5 raw"],
                 era[quantile_support],
                 target[quantile_support],
             )
-            calibrated_support = quantile_support & np.isfinite(calibrated_era)
             update_point_metrics(
                 quantile_accumulators["ERA5 quantile mapped"],
-                calibrated_era[calibrated_support],
-                target[calibrated_support],
+                calibrated_era[quantile_support],
+                target[quantile_support],
             )
+            sampled_indices = np.flatnonzero(quantile_support)
+            sample_count = min(int(sampled_indices.size), int(args.qm_eval_samples_per_hour))
+            if sampled_indices.size > sample_count:
+                sampled_indices = eval_sample_rng.choice(
+                    sampled_indices, size=sample_count, replace=False
+                )
+            for name, values in (
+                ("ERA5 raw", era),
+                ("ERA5 quantile mapped", calibrated_era),
+            ):
+                update_quantile_distribution(
+                    quantile_distribution_accumulators[name],
+                    values[quantile_support],
+                    values.ravel()[sampled_indices],
+                )
 
             # 4. Per-target-intensity error for raw inputs and both predictions.
             bin_masks = compute_intensity_masks(target)
@@ -721,18 +815,19 @@ def main():
 
         neighborhood_results = {}
         neighborhood_rows = []
-        for window in SCALES_KM:
-            neighborhood_results[str(window)] = {}
+        for radius in SCALES_KM:
+            neighborhood_results[str(radius)] = {}
             for name in ESTIMATE_NAMES:
-                neighborhood_results[str(window)][name] = {}
+                neighborhood_results[str(radius)][name] = {}
                 for label, threshold in THRESHOLDS:
                     result = finish_neighborhood_metrics(
-                        neighborhood_accumulators[(window, name, label)]
+                        neighborhood_accumulators[(radius, name, label)]
                     )
-                    neighborhood_results[str(window)][name][label] = result
+                    neighborhood_results[str(radius)][name][label] = result
                     neighborhood_rows.append({
-                        "neighborhood_km": window,
-                        "window_pixels": window,
+                        "radius_km": radius,
+                        "radius_cells": radius,
+                        "disk_cells": int(circular_neighborhood_kernel(radius).sum()),
                         "method": name,
                         "threshold_mm_h": threshold,
                         "valid_centers": result["valid_centers"],
@@ -748,11 +843,32 @@ def main():
             name: finish_point_metrics(accumulator)
             for name, accumulator in quantile_accumulators.items()
         }
+        quantile_distribution_results = {
+            name: finish_quantile_distribution(accumulator)
+            for name, accumulator in quantile_distribution_accumulators.items()
+        }
+        expected_common_pixel_hours = int(support_totals["raw_three_way_pixel_hours"])
+        for name, result in multiscale_results["1"].items():
+            if result["n_pixel_hours"] != expected_common_pixel_hours:
+                raise RuntimeError(
+                    "1 km {} denominator differs from the shared common support".format(name)
+                )
+        for name, result in quantile_results.items():
+            if result["n_pixel_hours"] != expected_common_pixel_hours:
+                raise RuntimeError(
+                    "{} quantile comparison denominator differs from the shared common support".format(
+                        name
+                    )
+                )
+            if quantile_distribution_results[name]["n_pixel_hours"] != expected_common_pixel_hours:
+                raise RuntimeError(
+                    "{} distribution denominator differs from the shared common support".format(name)
+                )
         quantile_rows = []
         for name, result in quantile_results.items():
             quantile_rows.append({
                 "method": name,
-                "support": "finite ERA5/RADKLIM pair support inside overlap",
+                "support": "shared finite RADKLIM/ERA5/Synthetic LR support inside overlap",
                 "n_pixel_hours": result["n_pixel_hours"],
                 "valid_hours": result["valid_hours"],
                 "mae_mm_h": result["mae_mm_h"],
@@ -761,6 +877,14 @@ def main():
                 "csi_at_0.1": result["csi"]["0.1"]["score"],
                 "csi_at_1": result["csi"]["1"]["score"],
                 "csi_at_5": result["csi"]["5"]["score"],
+                "mean_mm_h": quantile_distribution_results[name]["mean_mm_h"],
+                "std_mm_h": quantile_distribution_results[name]["std_mm_h"],
+                "max_mm_h": quantile_distribution_results[name]["max_mm_h"],
+                "p95_mm_h_sampled": quantile_distribution_results[name]["p95_mm_h_sampled"],
+                "p99_mm_h_sampled": quantile_distribution_results[name]["p99_mm_h_sampled"],
+                "p99_9_mm_h_sampled": quantile_distribution_results[name]["p99_9_mm_h_sampled"],
+                "wet_fraction": quantile_distribution_results[name]["wet_fraction"],
+                "quantile_sample_pixels": quantile_distribution_results[name]["quantile_sample_pixels"],
             })
 
         intensity_results = {}
@@ -817,10 +941,51 @@ def main():
                     "fss_25km_minus_1km": safe_delta(twenty_five["fss"], one["fss"]),
                 }
 
+        qm_spatial_deltas = {"multiscale": {}, "neighborhood": {}}
+        for scale in SCALES_KM:
+            raw_result = multiscale_results[str(scale)]["ERA5 raw"]
+            qm_result = multiscale_results[str(scale)]["ERA5 quantile mapped"]
+            qm_spatial_deltas["multiscale"][str(scale)] = {
+                "mae_mm_h": safe_delta(qm_result["mae_mm_h"], raw_result["mae_mm_h"]),
+                "rmse_mm_h": safe_delta(qm_result["rmse_mm_h"], raw_result["rmse_mm_h"]),
+                "csi": {
+                    label: safe_delta(
+                        qm_result["csi"][label]["score"], raw_result["csi"][label]["score"]
+                    )
+                    for label, _ in THRESHOLDS
+                },
+                "fss_one_cell": {
+                    label: safe_delta(
+                        qm_result["fss_one_cell"][label], raw_result["fss_one_cell"][label]
+                    )
+                    for label, _ in THRESHOLDS
+                },
+            }
+        for radius in SCALES_KM:
+            qm_spatial_deltas["neighborhood"][str(radius)] = {
+                label: {
+                    "neighborhood_csi_fractional": safe_delta(
+                        neighborhood_results[str(radius)]["ERA5 quantile mapped"][label][
+                            "neighborhood_csi_fractional"
+                        ],
+                        neighborhood_results[str(radius)]["ERA5 raw"][label][
+                            "neighborhood_csi_fractional"
+                        ],
+                    ),
+                    "fss": safe_delta(
+                        neighborhood_results[str(radius)]["ERA5 quantile mapped"][label]["fss"],
+                        neighborhood_results[str(radius)]["ERA5 raw"][label]["fss"],
+                    ),
+                }
+                for label, _ in THRESHOLDS
+            }
+
         summary = {
             "experiment": "Gap Decomposition Experiment",
             "evaluation_split": args.split,
             "evaluation_hours": int(len(eval_times)),
+            "timestamp_list_sha256": timestamp_list_sha256(eval_times),
+            "common_support_sha256": support_digest.hexdigest(),
             "evaluation_first_timestamp_utc": datetime.fromtimestamp(
                 int(eval_times[0]), timezone.utc
             ).isoformat(),
@@ -842,24 +1007,30 @@ def main():
                 "overlap_grid_pixels": support_totals["overlap_pixels"],
                 "target_valid_pixel_hours": support_totals["target_valid_pixel_hours"],
                 "raw_three_way_pixel_hours": support_totals["raw_three_way_pixel_hours"],
-                "five_field_common_pixel_hours": support_totals["five_field_common_pixel_hours"],
-                "multiscale_and_neighborhood": "same hourly support across RADKLIM truth, both raw inputs, and both predictions; all inside saved overlap mask",
-                "quantile_mapping": "finite ERA5/RADKLIM pair support inside saved overlap mask; raw and calibrated ERA5 use identical pixels",
+                "metric_pixel_hours": support_totals["raw_three_way_pixel_hours"],
+                "common_support_pixel_hours": support_totals["raw_three_way_pixel_hours"],
+                "common_definition": "finite RADKLIM target, finite aligned ERA5, valid mapped Synthetic LR availability, all inside overlap; both predictions and quantile-mapped ERA5 must be finite there",
+                "common_mask_is_shared_with_04_and_05": True,
             },
             "definitions": {
                 "multiscale": "spatial means over centered, non-overlapping N by N native grid blocks; N=1/5/10/25 cells for nominal 1/5/10/25 km; block cells require the configured common-support fraction; partial outer rows/columns are symmetrically cropped",
-                "block_validity": "mean precipitation over available five-field common-support pixels within each block; default minimum support fraction 0.5",
+                "block_validity": "mean precipitation over available shared-common-support pixels within each block; default minimum support fraction 0.5",
                 "multiscale_fss": "standard FSS computed at one coarse-grid cell per aggregated field and threshold",
-                "spatial_tolerance": "moving square windows with the exact requested side lengths in native 1 km cells; a window is scored if its common support reaches the configured fraction",
-                "neighborhood_csi": "fractional neighborhood CSI: H=sum(f*o), FA=sum(f*(1-o)), M=sum((1-f)*o), where f/o are forecast/observed event fractions in the same window; at 1 km this equals ordinary CSI",
-                "fss": "FSS=1-sum((f-o)^2)/sum(f^2+o^2), using event fractions in the same valid neighborhood windows",
-                "quantile_map": "global empirical one-dimensional ERA5-to-RADKLIM marginal map fitted on sampled train-only common-support pixel-hours; no spatial conditioning; applied only to ERA5 raw on evaluation hours",
-                "intensity_bins": "RADKLIM target bins: <0.1, [0.1,1), [1,5), [5,10], >10 mm/h; error metrics use the five-field common support",
+                "point_metric_denominator": "shared common pixel-hour count for native-grid metrics; CSI uses hits + false alarms + misses, all counted only on the same mask",
+                "spatial_tolerance": "moving Euclidean disks of radius 1/5/10/25 native-grid cells (nominal km); a center itself must be common-valid and the full disk must have the configured fraction of common-valid pixels",
+                "neighborhood_csi": "fractional neighborhood CSI: H=sum(f*o), FA=sum(f*(1-o)), M=sum((1-f)*o), where f/o are event fractions among common-valid pixels in the same disk",
+                "fss": "FSS=1-sum((f-o)^2)/sum(f^2+o^2), using event fractions in the same valid circular neighborhoods",
+                "multiscale_metric_denominator": "accepted non-overlapping blocks; each block must reach the configured common-support fraction and represents the mean over its valid pixels",
+                "quantile_map": "global empirical one-dimensional ERA5-to-RADKLIM marginal map fitted on sampled train-only three-field common-support pixel-hours; no spatial conditioning; applied to ERA5 on evaluation hours",
+                "quantile_distributions": "mean/std/max exact on shared ERA5/Synthetic/RADKLIM support; P95/P99/P99.9 estimated from identical per-hour uniform samples for raw and mapped ERA5",
+                "precipitation_clipping": "raw ERA5, mapped Synthetic LR, and RADKLIM are not clipped for metrics; U-Net outputs retain the existing inverse-transform lower clip at zero; quantile mapping retains its existing nonnegative lower clip",
+                "intensity_bins": "RADKLIM target bins: <0.1, [0.1,1), [1,5), [5,10], >10 mm/h; error metrics use the shared three-field common support",
                 "bias": "estimate minus RADKLIM target",
             },
             "configuration": {
                 "minimum_support_fraction": float(args.min_support_fraction),
                 "qm_samples_per_hour": int(args.qm_samples_per_hour),
+                "qm_eval_samples_per_hour": int(args.qm_eval_samples_per_hour),
                 "seed": int(seed),
                 "scales_km": list(SCALES_KM),
                 "thresholds_mm_h": {label: value for label, value in THRESHOLDS},
@@ -880,6 +1051,7 @@ def main():
             },
             "spatial_tolerance_metrics": neighborhood_results,
             "raw_vs_quantile_mapped_era5": quantile_results,
+            "raw_vs_quantile_mapped_era5_distribution": quantile_distribution_results,
             "intensity_stratified_errors": intensity_results,
             "derived_deltas": {
                 "raw_input_25km_vs_1km": scale_comparison,
@@ -906,7 +1078,18 @@ def main():
                         quantile_results["ERA5 quantile mapped"]["csi"]["5"]["score"],
                         quantile_results["ERA5 raw"]["csi"]["5"]["score"],
                     ),
+                    "distribution": {
+                        key: safe_delta(
+                            quantile_distribution_results["ERA5 quantile mapped"][key],
+                            quantile_distribution_results["ERA5 raw"][key],
+                        )
+                        for key in (
+                            "mean_mm_h", "std_mm_h", "max_mm_h", "p95_mm_h_sampled",
+                            "p99_mm_h_sampled", "p99_9_mm_h_sampled", "wet_fraction",
+                        )
+                    },
                 },
+                "era5_quantile_mapping_spatial_skill_minus_raw": qm_spatial_deltas,
             },
             "interpretation_limit": "These diagnostics indicate which error signatures are consistent with scale, displacement, or marginal-distribution effects; they do not uniquely identify causal mechanisms.",
             "output_files": {
@@ -932,7 +1115,7 @@ def main():
             output_dir / "spatial_tolerance_metrics.csv",
             neighborhood_rows,
             (
-                "neighborhood_km", "window_pixels", "method", "threshold_mm_h", "valid_centers",
+                "radius_km", "radius_cells", "disk_cells", "method", "threshold_mm_h", "valid_centers",
                 "valid_hours", "neighborhood_csi_fractional", "fss", "fractional_hits",
                 "fractional_false_alarms", "fractional_misses",
             ),
@@ -942,7 +1125,9 @@ def main():
             quantile_rows,
             (
                 "method", "support", "n_pixel_hours", "valid_hours", "mae_mm_h", "rmse_mm_h",
-                "bias_mm_h", "csi_at_0.1", "csi_at_1", "csi_at_5",
+                "bias_mm_h", "csi_at_0.1", "csi_at_1", "csi_at_5", "mean_mm_h", "std_mm_h",
+                "max_mm_h", "p95_mm_h_sampled", "p99_mm_h_sampled", "p99_9_mm_h_sampled",
+                "wet_fraction", "quantile_sample_pixels",
             ),
         )
         write_csv(
@@ -967,7 +1152,7 @@ def main():
                     "summary": str(output_dir / "summary.json"),
                     "evaluation_hours": len(eval_times),
                     "raw_three_way_pixel_hours": support_totals["raw_three_way_pixel_hours"],
-                    "five_field_common_pixel_hours": support_totals["five_field_common_pixel_hours"],
+                    "common_support_sha256": support_digest.hexdigest(),
                     "ERA5 raw MAE": quantile_results["ERA5 raw"]["mae_mm_h"],
                     "ERA5 quantile-mapped MAE": quantile_results["ERA5 quantile mapped"]["mae_mm_h"],
                 },
